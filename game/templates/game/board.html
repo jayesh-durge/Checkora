@@ -131,6 +131,10 @@
                 <div style="display: flex; gap: 10px; justify-content: center; margin-bottom: 10px;">
                     <button class="btn color-choice active" id="pveWhiteBtn" data-color="white"
                         style="padding: 12px; flex: 1; border: 2px solid #f0c040; background: #fff; color: #000; transition: all 0.2s;">White</button>
+                    <button type="button" class="btn color-choice" id="pveRandomBtn" data-color="random" aria-label="Random color selection" 
+                        style="padding: 12px; flex: 1; border: 1px solid #444; background: linear-gradient(to right, #fff 50%, #000 50%); color: #666; transition: all 0.2s; font-weight: 500;">
+            🎲 Random
+        </button>    
                     <button class="btn color-choice" id="pveBlackBtn" data-color="black"
                         style="padding: 12px; flex: 1; border: 2px solid #444; background: #000; color: #fff; transition: all 0.2s;">Black</button>
                 </div>
@@ -217,7 +221,7 @@
 
         <!-- Board -->
         <div class="board-container">
-            <div class="turn-badge white" id="turnBadge" style="height: 48px; box-sizing: border-box;">
+            <div class="turn-badge white" id="turnBadge">
                 <span id="turnBadgeText">White</span>'s Turn
             </div>
             <div class="clocks">
@@ -228,6 +232,10 @@
                             style="display: none; color: #f0c040; margin-left: 4px; font-size: 0.8em;">(YOU)</span>
                     </span>
                     <span class="time" id="whiteTime">10:00</span>
+                </div>
+                <div class="online-status">
+                    <span id="status-indicator"></span>
+                    <span id="status-text">Online</span>
                 </div>
 
                 <div id="blackClock" class="clock black">
@@ -306,8 +314,8 @@
                         <button class="btn btn-gold" id="autoFlipBtn">Auto-Flip: OFF</button>
                     </div>
                     <button class="btn btn-gold" id="drawBtn" style="display: none;">Offer Draw</button>
-                    <button class="btn btn-gold" id="pauseBtn">Pause</button>
-                    <button class="btn" id="resignBtn" style="background: #333; color: #fff;">Resign</button>
+                    <button type="button" class="btn btn-pause" id="pauseBtn">Pause</button>
+                    <button type="button" class="btn btn-danger" id="resignBtn">Resign</button>
                     <button class="btn btn-gold" style="width: 100%;"
                         onclick="document.getElementById('rulebookModal').style.display='flex'">📖 Rulebook</button>
                 </div>
