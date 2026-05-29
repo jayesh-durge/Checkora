@@ -866,6 +866,9 @@ class CustomPasswordResetView(PasswordResetView):
         digest = hashlib.sha256(normalized.encode('utf-8')).hexdigest()
         return f'{prefix}:{digest}'
 
+    def _ip_expires_key(self, ip_key):
+        return f'{ip_key}:expires'
+
     def _client_ip(self, request):
         forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
         if forwarded_for:
@@ -906,12 +909,13 @@ class CustomPasswordResetView(PasswordResetView):
         ip_attempts = cache.get(ip_key, 0)
         max_attempts = getattr(settings, 'PASSWORD_RESET_IP_MAX_REQUESTS', 3)
         if ip_attempts >= max_attempts:
+            remaining = self._cooldown_remaining(self._ip_expires_key(ip_key))
+            if not remaining:
+                remaining = getattr(settings, 'PASSWORD_RESET_IP_WINDOW_SECONDS', 900)
             messages.error(
                 request,
                 self.ip_throttle_message.format(
-                    duration=self._format_duration(
-                        getattr(settings, 'PASSWORD_RESET_IP_WINDOW_SECONDS', 900)
-                    )
+                    duration=self._format_duration(remaining)
                 ),
             )
             return redirect('password_reset')
@@ -933,8 +937,13 @@ class CustomPasswordResetView(PasswordResetView):
         )
 
         ip_timeout = getattr(settings, 'PASSWORD_RESET_IP_WINDOW_SECONDS', 900)
+        ip_expires_key = self._ip_expires_key(request._password_reset_ip_key)
         if not cache.add(request._password_reset_ip_key, 1, timeout=ip_timeout):
             cache.incr(request._password_reset_ip_key)
+            if not cache.get(ip_expires_key):
+                cache.set(ip_expires_key, time.time() + ip_timeout, timeout=ip_timeout)
+        else:
+            cache.set(ip_expires_key, time.time() + ip_timeout, timeout=ip_timeout)
 
     def _single_user_form(self, selected_user):
         base_form = self.get_form_class()

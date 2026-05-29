@@ -2,6 +2,7 @@
 
 import json
 import sys
+import time
 from smtplib import SMTPException
 from unittest import mock
 
@@ -19,6 +20,7 @@ from django.test import (
 
 from .engine import ChessGame
 from .forms import CustomSetPasswordForm
+from .views import CustomPasswordResetView
 
 class EnginePathResolutionTest(SimpleTestCase):
     """Engine path selection should work across local platforms."""
@@ -329,6 +331,34 @@ class PasswordResetRateLimitTest(TestCase):
             'Too many password reset requests',
         )
         self.assertEqual(len(mail.outbox), 2)
+
+    @override_settings(PASSWORD_RESET_IP_MAX_REQUESTS=2)
+    def test_ip_throttle_message_uses_remaining_window_time(self):
+        User.objects.create_user(
+            username='remainingplayer',
+            email='remaining@example.com',
+            password='StrongPass123!',
+        )
+        view = CustomPasswordResetView()
+        ip_key = view._cache_key('password-reset-ip', '203.0.113.30')
+        cache.set(ip_key, 2, timeout=900)
+        cache.set(
+            view._ip_expires_key(ip_key),
+            time.time() + 125,
+            timeout=900,
+        )
+
+        response = self.client.post(
+            self.reset_url,
+            data={'email': 'remaining@example.com'},
+            REMOTE_ADDR='203.0.113.30',
+            follow=True,
+        )
+
+        self.assertRedirects(response, self.reset_url)
+        self.assertContains(response, '2 minute(s)')
+        self.assertNotContains(response, '15 minute(s)')
+        self.assertEqual(len(mail.outbox), 0)
 
 
 class MoveValidationTest(TestCase):
