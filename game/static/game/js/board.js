@@ -1309,7 +1309,7 @@
             ========================================================== */
             async function onClick(r, c) {
                 if (replayMode) return;
-                if (dragging) return;
+                if (dragging && !touchDragging) return;
 
                 const isPremoveMode = gameMode === 'ai' && turn !== playerColor;
                 const vBoard = isPremoveMode ? getVirtualBoard() : board;
@@ -3480,15 +3480,15 @@ if (leaveConfirmNo) leaveConfirmNo.addEventListener('click', () => {
                 }
             }, { passive: false });
 
-            boardEl.addEventListener('touchend', (e) => {
-                if (!touchStartPos) return;
-
+            boardEl.addEventListener('touchend', async (e) => {
+                const srcSquare = touchDragSrc;
+                if (!srcSquare && !selected) return;
                 const touch = e.changedTouches[0];
                 let movedToSquare = false;
 
                 if (touchDragging && touchDragSrc) {
                     // Clean up original piece transparency
-                    const srcSquareEl = sq(touchDragSrc.r, touchDragSrc.c);
+                    const srcSquareEl = sq(srcSquare.r, srcSquare.c);
                     const pieceImg = srcSquareEl ? srcSquareEl.querySelector('.piece') : null;
                     if (pieceImg) {
                         pieceImg.classList.remove('touch-dragging-original');
@@ -3508,7 +3508,7 @@ if (leaveConfirmNo) leaveConfirmNo.addEventListener('click', () => {
                         const tc = parseInt(destSquareEl.dataset.c, 10);
 
                         if (tr !== touchDragSrc.r || tc !== touchDragSrc.c) {
-                            tryMove(touchDragSrc.r, touchDragSrc.c, tr, tc);
+                            await tryMove(touchDragSrc.r, touchDragSrc.c, tr, tc);
                             movedToSquare = true;
                         }
                     }
@@ -3520,18 +3520,22 @@ if (leaveConfirmNo) leaveConfirmNo.addEventListener('click', () => {
                     // Prevent click generation
                     e.preventDefault();
                 } else {
-                    // Quick tap -> allow tap-to-select and tap-to-destination behavior
-                    const targetEl = document.elementFromPoint(touch.clientX, touch.clientY);
-                    const tapSquareEl = targetEl ? targetEl.closest('.square') : null;
-                    const tapR = tapSquareEl ? parseInt(tapSquareEl.dataset.r, 10) : touchTapSquare?.r;
-                    const tapC = tapSquareEl ? parseInt(tapSquareEl.dataset.c, 10) : touchTapSquare?.c;
+                    e.preventDefault();
 
-                    if (Number.isInteger(tapR) && Number.isInteger(tapC)) {
-                        onClick(tapR, tapC);
-                        e.preventDefault();
-                    }
+                    const targetEl = document.elementFromPoint(
+                        touch.clientX,
+                        touch.clientY
+                    );
+                    if (!targetEl) return;
+                    const squareEl = targetEl.closest('.square');
+                        
+                    if (!squareEl) return;
+
+                    const tr = parseInt(squareEl.dataset.r);
+                    const tc = parseInt(squareEl.dataset.c);
+                    await onClick(tr, tc);
+                    
                 }
-
                 // Reset state
                 touchStartPos = null;
                 touchDragSrc = null;
