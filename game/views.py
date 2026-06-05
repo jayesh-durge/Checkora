@@ -653,13 +653,37 @@ def register_view(request):
                         )
                         return redirect('verify_otp')
 
-                    # Re-verification: if an inactive account already owns
-                    # this username or email, reuse it instead of creating
-                    # a duplicate.  This preserves the original account.
-                    inactive_user = User.objects.filter(
-                        Q(username__iexact=username) | Q(email__iexact=email),
-                        is_active=False,
-                    ).select_for_update().first()
+                    inactive_candidates = list(
+                        User.objects.select_for_update().filter(
+                            Q(username__iexact=username) | Q(email__iexact=email),
+                            is_active=False,
+                        )
+                    )
+                    exact_inactive_matches = [
+                        u for u in inactive_candidates
+                        if u.username.lower() == username.lower()
+                        and u.email.lower() == email.lower()
+                    ]
+
+                    # If there are matching inactive accounts but none is a full identity match,
+                    # trigger the generic dummy flow to prevent hijacking/enumeration.
+                    if inactive_candidates and len(exact_inactive_matches) != 1:
+                        request.session['registration_user_id'] = -1
+                        request.session['registration_email'] = email
+                        dummy_otp = str(secrets.randbelow(900000) + 100000)
+                        request.session['registration_otp_hash'] = hashlib.sha256(
+                            f"{dummy_otp}:{settings.SECRET_KEY}".encode()
+                        ).hexdigest()
+                        request.session['otp_created_at'] = time.time()
+                        # Return the same generic response to prevent username/email enumeration.
+                        messages.success(
+                            request,
+                            'If your details are valid, a verification '
+                            'code has been sent to your email.',
+                        )
+                        return redirect('verify_otp')
+
+                    inactive_user = exact_inactive_matches[0] if exact_inactive_matches else None
 
                     if inactive_user:
                         user = inactive_user
@@ -926,6 +950,7 @@ def verify_otp(request):
         }
     )
 
+@require_POST
 def resend_otp(request):
     user_id = request.session.get('registration_user_id')
 
@@ -967,8 +992,6 @@ def resend_otp(request):
         f"{otp}:{settings.SECRET_KEY}".encode()
     ).hexdigest()
 
-    request.session['registration_otp_hash'] = otp_hash
-
     try:
         send_mail(
             'Your Checkora Verification Code',
@@ -982,6 +1005,7 @@ def resend_otp(request):
             request,
             'A new OTP has been sent to your email.'
         )
+        request.session['registration_otp_hash'] = otp_hash
         request.session['otp_created_at'] = time.time()
         request.session['last_otp_time'] = time.time()
 
@@ -2228,7 +2252,8 @@ def lesson_detail_view(request, lesson_name):
         "game/lesson_detail.html",
         {
             "lesson": lesson,
-            "lesson_steps": lesson.get("steps", []),
+            "lesson_steps": lesson.get("lesson_steps", lesson.get("steps", [])),
+            "practice_position": lesson.get("practice_position"),
             "board_examples": lesson.get(
                 "board_examples",
                 []
