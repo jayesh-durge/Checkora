@@ -48,6 +48,8 @@ document.body.innerHTML = `
   <div id="blackCapturedName"></div>
   <div id="turnBadgeText"></div>
 `;
+global.SOUND_BASE_URL = '/static/game/sounds/';
+
 // Mock Worker for Jest
 global.Worker = class MockWorker {
   constructor(url) {
