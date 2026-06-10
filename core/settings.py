@@ -35,7 +35,14 @@ if IS_PRODUCTION:
 else:
     DEBUG = os.environ.get('DEBUG', 'True').lower() == 'true'
 
-ALLOWED_HOSTS = ['.vercel.app', '*']
+ALLOWED_HOSTS = ['.vercel.app']
+
+if DEBUG or not IS_PRODUCTION:
+    ALLOWED_HOSTS.extend(['localhost', '127.0.0.1'])
+
+# Add extra domains from ALLOWED_HOSTS_EXTRA environment variable
+extra_hosts = [host.strip() for host in os.environ.get('ALLOWED_HOSTS_EXTRA', '').split(',') if host.strip()]
+ALLOWED_HOSTS.extend(extra_hosts)
 
 
 # Application definition
