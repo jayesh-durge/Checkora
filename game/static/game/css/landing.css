@@ -538,104 +538,12 @@ body {
 /* ==========================================================================
    Features and Content Sections
    ========================================================================== */
-.features {
-    padding: 4rem 5%;
-    max-width: 1200px;
-    margin: 0 auto;
-    width: 100%;
-}
-
 .section-title {
     text-align: center;
     font-size: 1.8rem;
     font-weight: 600;
     margin-bottom: 3rem;
     color: var(--text-primary);
-}
-
-.feature-cards {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 2rem;
-}
-
-.card {
-    background-color: var(--card-bg);
-    border: 1px solid var(--card-border);
-    border-radius: 10px;
-    height: 180px;
-    perspective: 1000px;
-    position: relative;
-    overflow: hidden;
-    cursor: pointer;
-    transition: transform 0.3s, box-shadow 0.3s, border-color 0.3s;
-}
-
-.card:hover {
-    transform: translateY(-6px);
-    border-color: var(--accent-gold);
-    box-shadow: 0 0 18px rgba(240, 192, 64, 0.18);
-}
-
-.card-inner {
-    position: relative;
-    width: 100%;
-    height: 100%;
-    transition: opacity 0.3s;
-}
-
-.card-front,
-.card-back {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 2rem;
-    transition: opacity 0.3s ease;
-}
-
-.card-front {
-    opacity: 1;
-}
-
-.card-back {
-    opacity: 0;
-    pointer-events: none;
-    text-align: left;
-    justify-content: center;
-    background-color: var(--card-hover);
-}
-
-.card-back p {
-    color: var(--text-secondary);
-    font-size: 0.95rem;
-    line-height: 1.6;
-}
-
-.card:hover .card-front,
-.card:focus-within .card-front {
-    opacity: 0;
-}
-
-.card:hover .card-back,
-.card:focus-within .card-back {
-    opacity: 1;
-    pointer-events: auto;
-}
-
-.card-icon {
-    margin-bottom: 1rem;
-}
-
-.card-title {
-    font-size: 1.1rem;
-    font-weight: 600;
-    color: var(--accent-gold);
 }
 
 .about {
