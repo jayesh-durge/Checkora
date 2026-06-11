@@ -366,6 +366,7 @@ body {
     margin: 0 auto;
     text-align: center;
     z-index: 5;
+    padding-bottom: 8rem;
 }
 
 #chess-board-bg {
