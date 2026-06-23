@@ -1829,7 +1829,12 @@
     function updateCursorType(type) {
       activeCursor = type;
       cursor.className = 'cursor';
-      if (type !== 'default') cursor.classList.add(type);
+      if (type !== 'default') {
+         cursor.classList.add(type);
+         cursor.style.opacity = '0.98';
+       } else {
+         cursor.style.opacity = '0';
+       }
       cursorTypeLabel.textContent = type.charAt(0).toUpperCase() + type.slice(1);
       document.body.classList.toggle('hide-native-cursor', type !== 'default');
       cursorOptions.forEach(option => {
