@@ -20,12 +20,14 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const issue = context.payload.issue;
-            const assignee = context.payload.assignee.login;
+            const assigneeObj = context.payload.assignee;
 
-             if (!assignee) {
-                core.setFailed("No assignee found in payload.");
-                return;
-              }
+            if (!assigneeObj || !assigneeObj.login) {
+              core.setFailed("No assignee found in payload.");
+              return;
+            }
+
+            const assignee = assigneeObj.login;
 
             const message = [
               `👋 Hi @${assignee},`,
