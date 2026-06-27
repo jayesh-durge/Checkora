@@ -393,17 +393,50 @@ body {
 }
 
 .cursor.glow {
-    width: 22px;
-    height: 22px;
-    background: rgba(240, 192, 64, 0.98);
-    box-shadow: 0 0 20px rgba(240, 192, 64, 0.45);
+    width: 18px;
+    height: 18px;
+    background: radial-gradient(circle at center, #fff5d0 0%, #f0c040 45%, rgba(240, 192, 64, 0.6) 70%, rgba(240, 192, 64, 0) 100%);
+    /* Multi-layer glowing halo: bright tight core + softer wide outer glow.
+       Each layer uses a different blur radius to mimic a real light source. */
+    box-shadow:
+        0 0 8px 2px rgba(255, 224, 130, 0.95),
+        0 0 18px 6px rgba(240, 192, 64, 0.7),
+        0 0 36px 12px rgba(240, 192, 64, 0.35),
+        0 0 60px 20px rgba(240, 192, 64, 0.15);
+    /* Breathing animation lives on the parent here because we only animate
+       opacity (not transform), so it does not compete with JS translate3d. */
+    animation: cursor-Glow-Breathe 1.6s ease-in-out infinite;
+}
+
+@keyframes cursor-Glow-Breathe {
+    0%, 100% { opacity: 0.95; }
+    50%      { opacity: 0.7; }
 }
 
 .cursor.trail {
-    width: 14px;
-    height: 14px;
-    background: rgba(255, 255, 255, 0.95);
-    box-shadow: 0 0 30px rgba(255, 255, 255, 0.22);
+    width: 12px;
+    height: 12px;
+    background: rgba(240, 192, 64, 1);
+    box-shadow: 0 0 12px 2px rgba(240, 192, 64, 0.85);
+}
+/* Comet-style expanding ring lagging behind the cursor — gives the
+   impression of a fading trail each frame. */
+.cursor.trail::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    border: 2px solid rgba(240, 192, 64, 0.85);
+    animation: cursor-Trail-Ring 0.7s ease-out infinite;
+}
+
+@keyframes cursor-Trail-Ring {
+    0%   { opacity: 0.9; transform: translate(-50%, -50%) scale(0.4); }
+    100% { opacity: 0;   transform: translate(-50%, -50%) scale(1.8); }
 }
 
 .cursor.sparkle {
@@ -474,22 +507,6 @@ body {
    so it does NOT override the parent .cursor's transform that JS sets every
    frame to follow the mouse. */
 
-.cursor.trail::after {
-    content: '';
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    width: 30px;
-    height: 30px;
-    border-radius: 50%;
-    transform: translate(-50%, -50%);
-    background: rgba(240, 192, 64, 0.12);
-    /* Note: was "cursorRing" — the actual defined keyframe is "cursor-Ring"
-       (see below). This naming mismatch caused the trail's expanding ring
-       animation to silently never play. */
-    animation: cursor-Ring 0.8s ease-out infinite;
-}
-
 .cursor.sparkle::before,
 .cursor.sparkle::after {
     content: '';
@@ -517,11 +534,6 @@ body {
     animation: sparkle-Sprinkle 0.95s ease-out infinite;
     --dx: 18px;
     --dy: 10px;
-}
-
-@keyframes cursor-Ring {
-    0% { opacity: 0.6; transform: translate(-50%, -50%) scale(0.5); }
-    100% { opacity: 0; transform: translate(-50%, -50%) scale(1.4); }
 }
 
 body.hide-native-cursor,
