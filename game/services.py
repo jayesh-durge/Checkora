@@ -23,12 +23,21 @@ def create_or_update_active_game(request, game_state):
 
     if not request.session.session_key:
         request.session.save()
+    
+    game_status = game_state.get("game_status", "active")
+
+    # Remove tracker entry once the game has finished.
+    if game_status != "active":
+        ActiveGame.objects.filter(
+            session_key=request.session.session_key
+        ).delete()
+        return
 
     ActiveGame.objects.update_or_create(
         session_key=request.session.session_key,
         defaults={
             "user": request.user if request.user.is_authenticated else None,
-            "status": game_state.get("game_status", "active"),
+            "status": "active",
             "last_active": timezone.now(),
         },
     )
@@ -72,6 +81,7 @@ def cleanup_stale_games():
             continue
         game_data = session_data.get('game')
         if not game_data or game_data.get('game_status') != 'active':
+            active_game.delete()
             continue
         last_ts = game_data.get('last_ts', 0)
         if last_ts > stale_threshold:

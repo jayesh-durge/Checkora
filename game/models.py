@@ -485,6 +485,11 @@ class GameRecord(models.Model):
 class ActiveGame(models.Model):
     """Tracks active games for efficient cleanup."""
 
+    class Meta:
+        indexes = [
+            models.Index(fields=["status", "last_active"]),
+        ]
+
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -494,11 +499,11 @@ class ActiveGame(models.Model):
 
     session_key = models.CharField(
         max_length=40,
-        db_index=True,
+        unique=True,
     )
 
     last_active = models.DateTimeField(
-        default=timezone.now,
+        auto_now=True,
         db_index=True,
     )
 
