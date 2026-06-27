@@ -484,10 +484,10 @@ class ActiveGame(models.Model):
     """Tracks active games for efficient cleanup."""
 
     user = models.ForeignKey(
-    settings.AUTH_USER_MODEL,
-    on_delete=models.SET_NULL,
-    null=True,
-    blank=True,
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
     )
 
     session_key = models.CharField(
@@ -496,8 +496,8 @@ class ActiveGame(models.Model):
     )
 
     last_active = models.DateTimeField(
-    default=timezone.now,
-    db_index=True,
+        default=timezone.now,
+        db_index=True,
     )
 
     status = models.CharField(
@@ -509,6 +509,7 @@ class ActiveGame(models.Model):
     created_at = models.DateTimeField(
         auto_now_add=True,
     )
+
     def __str__(self):
         return f"{self.session_key} ({self.status})"
 

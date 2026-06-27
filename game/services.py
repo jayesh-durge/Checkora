@@ -69,7 +69,7 @@ def cleanup_stale_games():
             active_game.delete()
             continue
         except Exception:
-             continue
+            continue
         game_data = session_data.get('game')
         if not game_data or game_data.get('game_status') != 'active':
             continue
