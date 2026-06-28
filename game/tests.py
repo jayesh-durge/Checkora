@@ -7,7 +7,11 @@ from smtplib import SMTPException
 from unittest import mock
 
 from django.utils import timezone
-from game.models import ActiveGame
+from game.models import (
+    ActiveGame,
+    OpeningProgress,
+    UserProgress,
+)
 
 from django.conf import settings
 from django.contrib.auth.models import User
@@ -3565,3 +3569,83 @@ class GameResultRatingTest(TestCase):
         res = self.GameResult.objects.first()
         self.assertEqual(res.mode, 'pvp')
         self.assertEqual(res.winner, 'white')
+
+class OpeningStatsTests(TestCase):
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="testuser",
+            password="password123",
+        )
+
+        self.client.login(
+            username="testuser",
+            password="password123",
+        )
+
+        self.url = reverse("update_opening_stats")
+
+    def test_first_completion_awards_xp_and_records_progress(self):
+        response = self.client.post(
+            self.url,
+            data=json.dumps({
+                "opening_name": "Italian Game",
+                "completed": True,
+                "accuracy": 100,
+            }),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        progress = OpeningProgress.objects.get(
+            user=self.user,
+            opening_name="Italian Game",
+        )
+
+        self.assertEqual(progress.openings_completed, 1)
+
+        user_progress = UserProgress.objects.get(
+            user=self.user,
+        )
+
+        self.assertEqual(user_progress.xp, 75)
+
+    def test_repeated_completion_does_not_award_extra_xp(self):
+        payload = {
+            "opening_name": "Italian Game",
+            "completed": True,
+            "accuracy": 100,
+        }
+
+        # First completion
+        self.client.post(
+            self.url,
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        # Second completion
+        response = self.client.post(
+            self.url,
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        progress = OpeningProgress.objects.get(
+            user=self.user,
+            opening_name="Italian Game",
+        )
+
+        # Completion should only be counted once
+        self.assertEqual(progress.openings_completed, 1)
+
+        user_progress = UserProgress.objects.get(
+            user=self.user,
+        )
+
+        # XP should not increase after the second completion
+        self.assertEqual(user_progress.xp, 75)
+

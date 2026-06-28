@@ -343,12 +343,15 @@ def update_opening_progress(
             2
         )
 
-    if completed:
-        progress.openings_completed += 1
+    first_completion = False
+
+    if completed and progress.openings_completed == 0:
+        progress.openings_completed = 1
+        first_completion = True
 
     progress.save()
 
-    return progress
+    return progress, first_completion
 
 def generate_badge(user_achievement):
     achievement = user_achievement.achievement
