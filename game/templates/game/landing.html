@@ -1933,16 +1933,19 @@
       // CSS-rendered size then naturally extends down/right from there.
       // (Earlier versions centered via translate(-50%, -50%) but that
       //  collided with CSS animations on pseudo-elements.)
-      const CURSOR_OFFSET = 8; // half of base 16px — visually centers on pointer
+      const CURSOR_OFFSETS = {
+        default: 8,
+        glow: 9,
+        trail: 6,
+        sparkle: 8,
+        orbit: 20,
+        chess: 12
+      };
+      let cursorOffset = CURSOR_OFFSETS.default;
       function updateCursorPosition() {
         cursor.style.transform =
-          'translate3d(' + (mouseX - CURSOR_OFFSET) + 'px, ' + (mouseY - CURSOR_OFFSET) + 'px, 0)';
-        if (activeCursor !== 'default') {
-          rafRunning = true;
-          requestAnimationFrame(updateCursorPosition);
-        } else {
-          rafRunning = false;
-        }
+          'translate3d(' + (mouseX - cursorOffset) + 'px, ' + (mouseY - cursorOffset) + 'px, 0)';
+        rafRunning = false;
       }
 
       // mousemove only caches coords — no DOM writes here.
@@ -1970,7 +1973,7 @@
       function updateCursorType(type, persist) {
         if (VALID_CURSOR_TYPES.indexOf(type) < 0) type = 'default';
         // Auto-fallback for reduced-motion users (override non-default picks).
-        if (prefersReducedMotion && type !== 'default') type = 'default';
+        if ((isTouchDevice || prefersReducedMotion) && type !== 'default') type = 'default';
 
         activeCursor = type;
         cursor.className = 'cursor';
@@ -1978,7 +1981,7 @@
         if (type !== 'default') {
           cursor.classList.add(type);
           cursor.style.opacity = '0.98';
-          cursor.style.display = 'block';
+          cursor.style.display = type === 'chess' ? 'flex' : 'block';
         } else {
           cursor.style.opacity = '0';
           cursor.style.display = 'none';

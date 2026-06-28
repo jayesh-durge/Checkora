@@ -362,10 +362,20 @@ body {
     transform: rotate(-90deg);
 }
 
-/* Animated cursor
-   z-index is INTENTIONALLY kept below the navbar dropdown (z-index: 9999+)
-   so the dropdown content always renders on top of the cursor element and
-   remains clickable when open. */
+/* Animated Cursor System
+   - Core Architecture: JS-driven translate3d() (anchored 0,0) handles mouse tracking.
+     Pseudo-elements (::before/::after) host all animations to prevent transform 
+     conflicts with the JS-set position. GPU-accelerated; display: none by default.
+     Z-index < 9999 ensures dropdown/click-through interactivity.
+
+   - Variant Implementation:
+     * Default: Basic cursor; hidden on load to avoid unstyled flashes.
+     * Sparkle: Pulsing handled on pseudo-elements to avoid overwriting JS transforms.
+     * Comet/Trail: Fading ring effect lagging via frame-based updates.
+     * Orbit/Planet: Uses composed transforms; parent rotate() sweeps the planet 
+       (::after) while translateY() provides outward offset on the ring (::before).
+     * Chess (Pawn): Glyph follows pointer with dynamic tilt and soft glow. */
+     
 .cursor {
     position: fixed;
     pointer-events: none;
@@ -374,18 +384,9 @@ body {
     height: 18px;
     border-radius: 50%;
     background: rgba(240, 192, 64, 0.95);
-    /* Top-left anchoring (0,0). The JS translate3d() adds the mouse offset
-       on top. We deliberately do NOT use translate(-50%, -50%) here because
-       a transform on the parent would be overwritten by CSS animations on
-       ::before/::after; anchoring with top/left (initial 0,0) and letting
-       JS write the full position is simpler and more robust. */
     top: 0;
     left: 0;
-    /* display: none by default — JS sets display: block when a non-default
-       variant is active. This guarantees the cursor is hidden when Default
-       is selected, with no chance of a flash of unstyled cursor on load. */
     display: none;
-    /* GPU layer hint: avoids re-paint cost when transform is updated per frame. */
     will-change: transform;
     transition: width 0.2s ease, height 0.2s ease, background 0.2s ease, box-shadow 0.2s ease, opacity 0.12s ease;
     box-shadow: 0 0 0 0 rgba(240, 192, 64, 0.3);
@@ -396,19 +397,15 @@ body {
     width: 18px;
     height: 18px;
     background: radial-gradient(circle at center, #fff5d0 0%, #f0c040 45%, rgba(240, 192, 64, 0.6) 70%, rgba(240, 192, 64, 0) 100%);
-    /* Multi-layer glowing halo: bright tight core + softer wide outer glow.
-       Each layer uses a different blur radius to mimic a real light source. */
     box-shadow:
         0 0 8px 2px rgba(255, 224, 130, 0.95),
         0 0 18px 6px rgba(240, 192, 64, 0.7),
         0 0 36px 12px rgba(240, 192, 64, 0.35),
         0 0 60px 20px rgba(240, 192, 64, 0.15);
-    /* Breathing animation lives on the parent here because we only animate
-       opacity (not transform), so it does not compete with JS translate3d. */
-    animation: cursor-Glow-Breathe 1.6s ease-in-out infinite;
+    animation: cursor-glow-breathe 1.6s ease-in-out infinite;
 }
 
-@keyframes cursor-Glow-Breathe {
+@keyframes cursor-glow-breathe {
     0%, 100% { opacity: 0.95; }
     50%      { opacity: 0.7; }
 }
@@ -419,8 +416,7 @@ body {
     background: rgba(240, 192, 64, 1);
     box-shadow: 0 0 12px 2px rgba(240, 192, 64, 0.85);
 }
-/* Comet-style expanding ring lagging behind the cursor — gives the
-   impression of a fading trail each frame. */
+
 .cursor.trail::after {
     content: '';
     position: absolute;
@@ -431,10 +427,10 @@ body {
     border-radius: 50%;
     transform: translate(-50%, -50%);
     border: 2px solid rgba(240, 192, 64, 0.85);
-    animation: cursor-Trail-Ring 0.7s ease-out infinite;
+    animation: cursor-trail-ring 0.7s ease-out infinite;
 }
 
-@keyframes cursor-Trail-Ring {
+@keyframes cursor-trail-ring {
     0%   { opacity: 0.9; transform: translate(-50%, -50%) scale(0.4); }
     100% { opacity: 0;   transform: translate(-50%, -50%) scale(1.8); }
 }
@@ -444,32 +440,17 @@ body {
     height: 16px;
     background: rgba(255, 255, 255, 0.98);
     box-shadow: 0 0 24px rgba(255, 255, 255, 0.85), 0 0 0 6px rgba(240, 192, 64, 0.12);
-    /* Pulsing is handled by .cursor.sparkle::before/.cursor.sparkle::after
-       below — applying animation here would override the JS-set transform
-       every frame and the cursor would stay stuck at (0,0). */
 }
 
 .cursor.orbit {
-    /* The orbit cursor is a tiny central body with a ring around it,
-       plus a "planet" that travels along the ring. Implementation:
-       - Parent .cursor: 40x40 container with a central radial-gradient
-         "sun" painted as background-image (avoids touching transform).
-       - .cursor.orbit::before: thin rotating ring (the orbit path)
-       - .cursor.orbit::after: small dot that travels along the ring
-       The ring + planet live on pseudo-elements so they don't compete
-       with the JS-set transform on the parent. */
     width: 40px;
     height: 40px;
     background: radial-gradient(circle at center,
         #fff5d0 0%, #f0c040 35%, rgba(240, 192, 64, 0.6) 60%, rgba(240, 192, 64, 0) 75%);
     background-repeat: no-repeat;
     box-shadow: none;
-    /* The JS writes translate3d(mouseX - 8, mouseY - 8). With width/height
-       40px, that still anchors the top-left at the cursor; the visible
-       ring is centered inside this 40px box. */
 }
 
-/* ── Chess variant: a pawn glyph follows the pointer with a soft glow. ── */
 .cursor.chess {
     width: 24px;
     height: 24px;
@@ -486,14 +467,10 @@ body {
 }
 .cursor.chess::before {
     content: '♟';
-    /* Slight tilt makes the pawn feel more dynamic. */
     display: inline-block;
     transform: rotate(-15deg);
 }
 
-/* Orbit ring (the path). Drawn as a thin gold circle outline on
-   .cursor.orbit::before, rotating slowly to give a "solar system" feel.
-   The ring is centered on the 40x40 .cursor box. */
 .cursor.orbit::before {
     content: '';
     position: absolute;
@@ -506,14 +483,9 @@ body {
     border-radius: 50%;
     border: 1.5px dashed rgba(240, 192, 64, 0.55);
     box-shadow: 0 0 8px rgba(240, 192, 64, 0.35);
-    animation: cursor-Orbit-Spin 6s linear infinite;
+    animation: cursor-orbit-spin 6s linear infinite;
 }
 
-/* The "planet" — a small gold dot that orbits the center along the ring.
-   We use rotate(angle) on the parent wrapper and translate outward on
-   the dot itself to place it on the ring's edge; the parent rotation
-   sweeps it around. Both transforms compose without touching the JS-set
-   translate3d on .cursor. */
 .cursor.orbit::after {
     content: '';
     position: absolute;
@@ -523,38 +495,27 @@ body {
     height: 8px;
     margin-left: -4px;
     margin-top: -4px;
-    /* Push the planet outward to the edge of the 36px ring (radius 18),
-       then the parent rotate() (set by animation) sweeps it around. */
     transform-origin: center;
-    animation: cursor-Orbit-Revolve 2.4s linear infinite;
+    animation: cursor-orbit-revolve 2.4s linear infinite;
     background: radial-gradient(circle at 30% 30%, #fff5d0 0%, #f0c040 60%, rgba(240, 192, 64, 0) 100%);
     border-radius: 50%;
     box-shadow: 0 0 6px 1px rgba(255, 224, 130, 0.95), 0 0 14px 3px rgba(240, 192, 64, 0.5);
 }
 
-@keyframes cursor-Orbit-Spin {
+@keyframes cursor-orbit-spin {
     from { transform: rotate(0deg); }
     to   { transform: rotate(360deg); }
 }
 
-/* The planet revolves: starts at top of ring (translateY -18px),
-   then the rotate() wrapper carries it around. We can't animate the
-   individual transform parts separately, but rotating the whole ::after
-   around the cursor center while keeping the offset is exactly what
-   we want — rotate composes with translateY to produce orbital motion. */
-@keyframes cursor-Orbit-Revolve {
+@keyframes cursor-orbit-revolve {
     from { transform: rotate(0deg) translateY(-18px) rotate(0deg); }
     to   { transform: rotate(360deg) translateY(-18px) rotate(-360deg); }
 }
 
-@keyframes sparkle-Sprinkle {
+@keyframes sparkle-sprinkle {
     0% { transform: translate(-50%, -50%) translate3d(0,0,0) scale(0.5); opacity: 1; }
     100% { transform: translate(-50%, -50%) translate3d(var(--dx), var(--dy), 0) scale(0.1); opacity: 0; }
 }
-
-/* NOTE: pulsing scale animation is on .cursor.orbit::before (defined above)
-   so it does NOT override the parent .cursor's transform that JS sets every
-   frame to follow the mouse. */
 
 .cursor.sparkle::before,
 .cursor.sparkle::after {
