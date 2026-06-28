@@ -3650,7 +3650,6 @@ def opening_trainer(request):
     )
 
 @ensure_csrf_cookie
-
 @rate_limit(
     window_setting="OPENING_RATE_LIMIT_WINDOW_SECONDS",
     max_setting="OPENING_RATE_LIMIT_MAX_REQUESTS",
@@ -3704,7 +3703,7 @@ def update_opening_stats(request):
             {
                 "success": False,
                 "error": "Opening name is required",
-           },
+            },
             status=400,
         )
 
@@ -3733,7 +3732,6 @@ def update_opening_stats(request):
 
     accuracy = max(0, min(100, accuracy))
 
-
     progress, first_completion = update_opening_progress(
         request.user,
         opening_name,
@@ -3750,7 +3748,7 @@ def update_opening_stats(request):
         "success": True,
         "accuracy": accuracy,
     })
-    
+
 @login_required
 def achievements_view(request):
     try:
