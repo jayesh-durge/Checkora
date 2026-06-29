@@ -68,7 +68,7 @@ class AuthenticationEndpointsTest(TestCase):
 
     @mock.patch('game.views.send_mail', side_effect=Exception('SMTP err'))
     @mock.patch('game.views.CustomUserCreationForm')
-    def test_register_post_email_failure(self, mock_form_class, mock_mail):
+    def test_register_post_email_failure(self, mock_form_class, _mock_mail):
         mock_instance = mock_form_class.return_value
         mock_instance.is_valid.return_value = True
 
@@ -93,7 +93,7 @@ class AuthenticationEndpointsTest(TestCase):
     @mock.patch('game.views.secrets.randbelow', return_value=23456)
     @mock.patch('game.views.CustomUserCreationForm')
     @mock.patch('game.views.send_mail')
-    def setup_registration_session(self, mock_mail, mock_form, mock_rand):
+    def setup_registration_session(self, _mock_mail, mock_form, _mock_rand):
         mock_instance = mock_form.return_value
         mock_instance.is_valid.return_value = True
 
