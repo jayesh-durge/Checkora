@@ -259,7 +259,7 @@ class TestOpeningServices(TestCase):
         self.assertEqual(progress.openings_completed, 1)
 
         # Newly created progress should initialize openings_started = 1
-        progress2, first2 = update_opening_progress(self.user, "Ruy Lopez")
+        progress2, _ = update_opening_progress(self.user, "Ruy Lopez")
         self.assertEqual(progress2.openings_started, 1)
 
         # Verify no-op when user is None
@@ -275,7 +275,7 @@ class TestActiveGameServices(TestCase):
 
     def test_create_or_update_active_game(self):
         request = self.factory.get("/")
-        middleware = SessionMiddleware(lambda req: None)
+        middleware = SessionMiddleware(lambda _: None)
         middleware.process_request(request)
         request.session.save()
 
@@ -315,7 +315,7 @@ class TestActiveGameServices(TestCase):
 
     def test_delete_active_game(self):
         request = self.factory.get("/")
-        middleware = SessionMiddleware(lambda req: None)
+        middleware = SessionMiddleware(lambda _: None)
         middleware.process_request(request)
         request.session.save()
 
