@@ -3649,7 +3649,7 @@ def opening_trainer(request):
         }
     )
 
-
+@ensure_csrf_cookie
 @rate_limit(
     window_setting="OPENING_RATE_LIMIT_WINDOW_SECONDS",
     max_setting="OPENING_RATE_LIMIT_MAX_REQUESTS",
@@ -3698,13 +3698,47 @@ def update_opening_stats(request):
     completed = data.get("completed", False)
     accuracy = data.get("accuracy", 0)
 
-    update_opening_progress(
+    if not opening_name:
+        return JsonResponse(
+            {
+                "success": False,
+                "error": "Opening name is required",
+            },
+            status=400,
+        )
+
+    valid_openings = {
+        opening["name"]
+        for opening in OPENINGS
+    }
+
+    if opening_name not in valid_openings:
+        return JsonResponse(
+            {
+                "success": False,
+                "error": "Invalid opening name",
+            },
+            status=400,
+        )
+
+    if not isinstance(accuracy, (int, float)):
+        return JsonResponse(
+            {
+                "success": False,
+                "error": "Invalid accuracy",
+            },
+            status=400,
+        )
+
+    accuracy = max(0, min(100, accuracy))
+
+    progress, first_completion = update_opening_progress(
         request.user,
         opening_name,
         completed=completed,
     )
 
-    if completed:
+    if completed and first_completion:
         award_xp(request.user, 50)
 
         if accuracy == 100:
@@ -3714,7 +3748,7 @@ def update_opening_stats(request):
         "success": True,
         "accuracy": accuracy,
     })
-    
+
 @login_required
 def achievements_view(request):
     try:

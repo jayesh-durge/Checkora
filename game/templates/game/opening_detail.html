@@ -15,6 +15,10 @@
 
 <body>
 
+<form style="display:none;">
+    {% csrf_token %}
+</form>
+
 <a href="{% url 'opening_trainer' %}" class="back-btn">
     ← Back to Openings
 </a>
@@ -77,6 +81,7 @@
 </div>
 
 {{ opening.moves|json_script:"opening-moves" }}
+{{ opening.name|json_script:"opening-name" }}
 
 <script src="{% static 'game/js/opening_trainer.js' %}"></script>
 

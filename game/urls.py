@@ -54,6 +54,12 @@ urlpatterns = [
     path("openings/", views.opening_trainer, name="opening_trainer"),
     path("openings/<slug:slug>/", views.opening_detail, name="opening_detail"),
 
+    path(
+        "api/opening-stats/",
+        views.update_opening_stats,
+        name="update_opening_stats",
+    ),
+
     path("api/puzzle-stats/", views.puzzle_stats_view, name="puzzle_stats"),
     path("api/puzzles/daily/", views.get_daily_puzzle, name="daily_puzzle"),
     path("puzzles/", views.puzzles_view, name="puzzles"),

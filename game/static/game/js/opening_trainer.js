@@ -5,6 +5,29 @@ if (!movesElement) {
 }
 
 const OPENING_MOVES = JSON.parse(movesElement.textContent);
+
+const openingNameElement = document.getElementById("opening-name");
+
+if (!openingNameElement) {
+    throw new Error("opening-name element not found");
+}
+
+const OPENING_NAME = JSON.parse(openingNameElement.textContent);
+
+function csrf() {
+    const input = document.querySelector(
+        "[name=csrfmiddlewaretoken]"
+    );
+
+    if (input?.value) {
+        return input.value;
+    }
+
+    const m = document.cookie.match(/csrftoken=([^;]+)/);
+
+    return m ? decodeURIComponent(m[1]) : "";
+}
+
 let currentMove = 0;
 let userColor = "w"; // 'w' or 'b'
 let selectedSquare = null;
@@ -36,10 +59,45 @@ function updateProgress() {
     progress.innerText = `${currentMove} / ${OPENING_MOVES.length}`;
 }
 
+async function persistOpeningProgress() {
+    const token = csrf();
+
+    try {
+        const response = await fetch("/api/opening-stats/", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRFToken": token,
+            },
+            body: JSON.stringify({
+                opening_name: OPENING_NAME,
+                completed: true,
+                accuracy: 100,
+            }),
+        });
+
+        if (!response.ok) {
+            throw new Error(
+                `Failed to save progress (${response.status})`
+            );
+        }
+
+        return await response.json();
+
+    } catch (error) {
+        console.error(
+            "Failed to save opening progress:",
+            error
+        );
+    }
+}
+
 function completeOpening() {
     feedback.innerText = "🎉 Opening completed successfully!";
     moveInput.disabled = true;
     checkButton.disabled = true;
+
+    persistOpeningProgress();
 }
 
 // Checks if the squares between 'from' and 'to' are empty

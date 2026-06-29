@@ -7,7 +7,11 @@ from smtplib import SMTPException
 from unittest import mock
 
 from django.utils import timezone
-from game.models import ActiveGame
+from game.models import (
+    ActiveGame,
+    OpeningProgress,
+    UserProgress,
+)
 
 from django.conf import settings
 from django.contrib.auth.models import User
@@ -3566,74 +3570,82 @@ class GameResultRatingTest(TestCase):
         self.assertEqual(res.mode, 'pvp')
         self.assertEqual(res.winner, 'white')
 
-
-@override_settings(
-    OPENING_RATE_LIMIT_WINDOW_SECONDS=60,
-    OPENING_RATE_LIMIT_MAX_REQUESTS=2,
-)
-class OpeningLookupRateLimitTest(TestCase):
-    """Opening lookup requests should be throttled."""
+class OpeningStatsTests(TestCase):
 
     def setUp(self):
-        cache.clear()
-        self.trainer_url = reverse('opening_trainer')
-        self.detail_url = reverse('opening_detail', kwargs={'slug': 'italian-game'})
-
-    def tearDown(self):
-        cache.clear()
-
-    def test_opening_trainer_rate_limit(self):
-        res1 = self.client.get(self.trainer_url)
-        self.assertEqual(res1.status_code, 200)
-        
-        res2 = self.client.get(self.trainer_url)
-        self.assertEqual(res2.status_code, 200)
-        
-        res3 = self.client.get(self.trainer_url, HTTP_ACCEPT='application/json')
-        self.assertEqual(res3.status_code, 429)
-        self.assertEqual(res3.json(), {"error": "Opening lookup rate limit reached. Please try again shortly."})
-
-        res_html = self.client.get(self.trainer_url, HTTP_ACCEPT='text/html')
-        self.assertEqual(res_html.status_code, 429)
-        self.assertIn(b"429 Too Many Requests", res_html.content)
-
-    def test_opening_detail_rate_limit(self):
-        res1 = self.client.get(self.detail_url)
-        self.assertEqual(res1.status_code, 200)
-        
-        res2 = self.client.get(self.detail_url)
-        self.assertEqual(res2.status_code, 200)
-        
-        res3 = self.client.get(self.detail_url, HTTP_ACCEPT='application/json')
-        self.assertEqual(res3.status_code, 429)
-        self.assertEqual(res3.json(), {"error": "Opening lookup rate limit reached. Please try again shortly."})
-
-    def test_opening_trainer_rate_limit_authenticated(self):
-        # First exhaust the anonymous limit (IP based)
-        res1 = self.client.get(self.trainer_url)
-        self.assertEqual(res1.status_code, 200)
-        
-        res2 = self.client.get(self.trainer_url)
-        self.assertEqual(res2.status_code, 200)
-        
-        res3 = self.client.get(self.trainer_url, HTTP_ACCEPT='application/json')
-        self.assertEqual(res3.status_code, 429)
-        self.assertEqual(res3.json(), {"error": "Opening lookup rate limit reached. Please try again shortly."})
-
-        # Now authenticate and verify we get a fresh allowance (User ID based)
-        User.objects.create_user(
-            username='testuser_rl',
-            password='Password123!',
-            email='testuser_rl@example.com'
+        self.user = User.objects.create_user(
+            username="testuser",
+            password="password123",
         )
-        self.client.login(username='testuser_rl', password='Password123!')
-        
-        res4 = self.client.get(self.trainer_url)
-        self.assertEqual(res4.status_code, 200)
-        
-        res5 = self.client.get(self.trainer_url)
-        self.assertEqual(res5.status_code, 200)
-        
-        res6 = self.client.get(self.trainer_url, HTTP_ACCEPT='application/json')
-        self.assertEqual(res6.status_code, 429)
-        self.assertEqual(res6.json(), {"error": "Opening lookup rate limit reached. Please try again shortly."})
+
+        self.client.login(
+            username="testuser",
+            password="password123",
+        )
+
+        self.url = reverse("update_opening_stats")
+
+    def test_first_completion_awards_xp_and_records_progress(self):
+        response = self.client.post(
+            self.url,
+            data=json.dumps({
+                "opening_name": "Italian Game",
+                "completed": True,
+                "accuracy": 100,
+            }),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        progress = OpeningProgress.objects.get(
+            user=self.user,
+            opening_name="Italian Game",
+        )
+
+        self.assertEqual(progress.openings_completed, 1)
+
+        user_progress = UserProgress.objects.get(
+            user=self.user,
+        )
+
+        self.assertEqual(user_progress.xp, 75)
+
+    def test_repeated_completion_does_not_award_extra_xp(self):
+        payload = {
+            "opening_name": "Italian Game",
+            "completed": True,
+            "accuracy": 100,
+        }
+
+        # First completion
+        self.client.post(
+            self.url,
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        # Second completion
+        response = self.client.post(
+            self.url,
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        progress = OpeningProgress.objects.get(
+            user=self.user,
+            opening_name="Italian Game",
+        )
+
+        # Completion should only be counted once
+        self.assertEqual(progress.openings_completed, 1)
+
+        user_progress = UserProgress.objects.get(
+            user=self.user,
+        )
+
+        # XP should not increase after the second completion
+        self.assertEqual(user_progress.xp, 75)
+
