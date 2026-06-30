@@ -53,7 +53,7 @@ from django.views.decorators.http import require_GET, require_POST
 from django.contrib.auth.decorators import login_required
 from django.db import models
 
-from django.db.models import Count, Avg, Max, Min, Sum
+from django.db.models import Count, Avg, Max, Min
 from datetime import timedelta
 
 from .opening_trainer_data import OPENINGS
@@ -4155,7 +4155,6 @@ def toggle_reply_vote(request, reply_id):
             },
             status=400,
         )
-
 
     if reply.is_deleted:
         return JsonResponse(
