@@ -653,3 +653,41 @@ class ReplyVote(models.Model):
 
     def __str__(self):
         return f"{self.user.username} voted {self.value} on reply {self.reply.id}"
+
+class UserProfile(models.Model):
+    """Stores optional profile data for a user, including their avatar.
+
+    The avatar is stored as a base64-encoded data URI (e.g.
+    ``data:image/jpeg;base64,...``) so that it persists correctly on
+    Vercel's ephemeral serverless filesystem without requiring external
+    object storage or a persistent MEDIA_ROOT directory.
+    """
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="profile"
+    )
+    # Stored as a base64 data URI. Empty string means no avatar set.
+    avatar = models.TextField(blank=True, default="")
+
+    def clean(self):
+        super().clean()
+        if self.avatar:
+            if not self.avatar.startswith("data:image/"):
+                raise ValidationError({"avatar": "Invalid avatar data URI."})
+            if ";base64," not in self.avatar:
+                raise ValidationError({"avatar": "Invalid avatar data URI."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.user.username} Profile"
+
+
+@receiver(post_save, sender=settings.AUTH_USER_MODEL)
+def create_user_profile(sender, instance, created, **kwargs):
+    """Automatically create a UserProfile whenever a new User is saved."""
+    if created:
+        UserProfile.objects.get_or_create(user=instance)
