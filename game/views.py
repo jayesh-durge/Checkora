@@ -2343,18 +2343,8 @@ def analyze_game_view(request):
         
         analyzed_moves_count = 0
         for idx, notation in enumerate(moves[:80]): # Cap at 80 for perf
-            analyzed_moves_count += 1
             move_num = idx // 2 + 1
             color = 'White' if idx % 2 == 0 else 'Black'
-
-            if 'x' in notation:
-                captures += 1
-            if notation.endswith('+'):
-                checks += 1
-            if notation.endswith('#'):
-                checkmates += 1
-            if '=' in notation:
-                promotions += 1
 
             best_move = None
             try:
@@ -2381,15 +2371,26 @@ def analyze_game_view(request):
                 if actual_from:
                     break
 
+            if not actual_from or not actual_to:
+                logger.warning('Could not resolve move notation %s, stopping analysis', notation)
+                break
+
+            # Now that it's resolved, increment stats
+            analyzed_moves_count += 1
+            if 'x' in notation:
+                captures += 1
+            if notation.endswith('+'):
+                checks += 1
+            if notation.endswith('#'):
+                checkmates += 1
+            if '=' in notation:
+                promotions += 1
+
             is_best = False
-            played_dict = None
-            if actual_from and actual_to:
-                played_dict = {'to_row': actual_to[0], 'to_col': actual_to[1]}
-                if best_move:
-                    is_best = (best_move['from_row'] == actual_from[0] and best_move['from_col'] == actual_from[1] and best_move['to_row'] == actual_to[0] and best_move['to_col'] == actual_to[1])
-                else:
-                    is_best = True
-            elif best_move is None:
+            played_dict = {'to_row': actual_to[0], 'to_col': actual_to[1]}
+            if best_move:
+                is_best = (best_move['from_row'] == actual_from[0] and best_move['from_col'] == actual_from[1] and best_move['to_row'] == actual_to[0] and best_move['to_col'] == actual_to[1])
+            else:
                 is_best = True
                 
             move_class = _classify_move(is_best, played_dict, best_move, game)
@@ -2407,11 +2408,8 @@ def analyze_game_view(request):
 
             move_analysis_details.append({'move_num': move_num, 'color': color, 'played': notation, 'best': best_notation, 'class': move_class})
 
-            if actual_from and actual_to:
-                game.make_move(actual_from[0], actual_from[1], actual_to[0], actual_to[1])
-                game.last_ts = time.time()
-            else:
-                break
+            game.make_move(actual_from[0], actual_from[1], actual_to[0], actual_to[1])
+            game.last_ts = time.time()
 
         bad_moves = blunders + mistakes
         accuracy = round(((analyzed_moves_count - bad_moves) / analyzed_moves_count) * 100) if analyzed_moves_count > 0 else 100
