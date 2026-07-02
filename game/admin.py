@@ -18,6 +18,7 @@ class ChessPuzzleAdmin(admin.ModelAdmin):
 
 original_each_context = admin.site.each_context
 
+
 def custom_each_context(request):
     context = original_each_context(request)
     is_admin_index = (
@@ -49,5 +50,6 @@ def custom_each_context(request):
         context["stats"] = {"users": None, "puzzles": None}
 
     return context
+
 
 admin.site.each_context = custom_each_context
