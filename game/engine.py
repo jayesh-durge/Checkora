@@ -22,7 +22,8 @@ import subprocess
 import json
 import sys
 import time
-
+import threading
+from datetime import date
 
 class ChessGame:
     """Manage a single chess game: state, validation,
@@ -51,6 +52,7 @@ class ChessGame:
 
     # Class-level cache so the file is read only once per process
     _opening_book: dict | None = None
+    _opening_book_lock = threading.Lock()
 
     INITIAL_BOARD = [
         ['r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'],
@@ -67,15 +69,17 @@ class ChessGame:
     #  Construction / serialization
     # ------------------------------------------------------------------
 
-    def __init__(self):
+    def __init__(self, time_limit=600, increment=0):
         self.board = [row[:] for row in self.INITIAL_BOARD]
         self.current_turn = 'white'
         self.move_history = []
         self.captured = {'white': [], 'black': []}
         # DP Table: {(row, col): [list of moves]}
         self.valid_moves_cache = {}
-        self.white_time = 10 * 60  # 10 minutes
-        self.black_time = 10 * 60
+        self.white_time = time_limit
+        self.black_time = time_limit
+        self.time_limit = time_limit
+        self.increment = increment
         self.last_ts = time.time()
         self.paused = False
         self.mode = 'pvp'
@@ -87,37 +91,57 @@ class ChessGame:
         # (row, col) of the square a pawn can capture en passant
         self.en_passant_target = None
         self.halfmove_clock = 0
+        self.initial_fullmove = 1
+        self.initial_turn_was_black = False
         self.repetition_history = [self.generate_position_key()]
         self.repetition_counts = {self.repetition_history[0]: 1}
         self.game_status = 'active'
         self.draw_reason = None
+        self.threefold_warning = False
 
     def serialize_board(self):
         """Flatten the 2-D board into a 64-char string for the C++ engine."""
         return ''.join(c if c else '.' for row in self.board for c in row)
 
-    def generate_pgn(self):
+    def generate_pgn(self, white_name='White', black_name='Black'):
         """Generate a PGN string from move history."""
         if not self.move_history:
             return ""
+        
+        # Compute result based on game status
+        result = '*'
+        if self.game_status == 'checkmate':
+            result = '0-1' if self.current_turn == 'white' else '1-0'
+        elif self.game_status in ('draw', 'stalemate'):
+            result = '1/2-1/2'
+        elif self.game_status == 'resignation':
+            result = '1-0' if self.current_turn == 'black' else '0-1'
 
         pgn_moves = []
+        
+        def _fix_castling(move):
+            return move.replace('0-0-0', 'O-O-O').replace('0-0', 'O-O')
         for i in range(0, len(self.move_history), 2):
             move_number = i // 2 + 1
-            white_move = self.move_history[i]['notation']
+            white_move = _fix_castling(self.move_history[i]['notation'])
             if i + 1 < len(self.move_history):
-                black_move = self.move_history[i + 1]['notation']
+                black_move = _fix_castling(self.move_history[i + 1]['notation'])
                 pgn_moves.append(f"{move_number}. {white_move} {black_move}")
             else:
                 pgn_moves.append(f"{move_number}. {white_move}")
+        
+        today = date.today().strftime('%Y.%m.%d')
         headers = [
             '[Event "Checkora Match"]',
-            '[White "White"]',
-            '[Black "Black"]',
-            '[Result "*"]',
+            '[Site "checkora.io"]',
+            f'[Date "{today}"]',
+            '[Round "?"]',
+            f'[White "{white_name}"]',
+            f'[Black "{black_name}"]',
+            f'[Result "{result}"]',
         ]
         moves = " ".join(pgn_moves)
-        return "\n".join(headers) + "\n\n" + moves
+        return "\n".join(headers) + "\n\n" + moves + " " + result
 
     def to_dict(self):
         """Serialise state for Django session storage.
@@ -129,6 +153,8 @@ DP cache is intentionally excluded to save cookie space."""
             'captured': self.captured,
             'white_time': self.white_time,
             'black_time': self.black_time,
+            'time_limit': self.time_limit,
+            'increment': self.increment,
             'last_ts': self.last_ts,
             'paused': self.paused,
             'mode': self.mode,
@@ -139,6 +165,9 @@ DP cache is intentionally excluded to save cookie space."""
             'repetition_history': self.repetition_history,
             'game_status': self.game_status,
             'draw_reason': self.draw_reason,
+            'threefold_warning': self.threefold_warning,
+            'initial_fullmove': getattr(self, 'initial_fullmove', 1),
+            'initial_turn_was_black': getattr(self, 'initial_turn_was_black', False),
         }
 
     @classmethod
@@ -152,6 +181,8 @@ DP cache is intentionally excluded to save cookie space."""
         game.paused = data.get('paused', False)
         game.white_time = data['white_time']
         game.black_time = data['black_time']
+        game.time_limit = data.get('time_limit', 600)
+        game.increment = data.get('increment', 0)
         game.last_ts = data['last_ts']
         game.mode = data.get('mode', 'pvp')
         game.player_color = data.get('player_color', 'white')
@@ -162,7 +193,9 @@ DP cache is intentionally excluded to save cookie space."""
         game.halfmove_clock = data.get('halfmove_clock', 0)
         game.game_status = data.get('game_status', 'active')
         game.draw_reason = data.get('draw_reason', None)
-
+        game.threefold_warning = data.get('threefold_warning', False)
+        game.initial_fullmove = data.get('initial_fullmove', 1)
+        game.initial_turn_was_black = data.get('initial_turn_was_black', False)
         repetition_history = data.get('repetition_history')
         if isinstance(repetition_history, list) and repetition_history:
             game.repetition_history = repetition_history
@@ -173,6 +206,134 @@ DP cache is intentionally excluded to save cookie space."""
 
         game.valid_moves_cache = {}
         return game
+
+    @classmethod
+    def from_fen(cls, fen: str, time_limit=600, increment=0):
+        """Create a new game state from a FEN string (board, side, castling)."""
+        if not isinstance(fen, str):
+            raise ValueError("FEN must be a string.")
+
+        fen = fen.strip()
+        if not fen:
+            raise ValueError("FEN is empty.")
+
+        parts = fen.split()
+        if len(parts) < 3:
+            raise ValueError("FEN must have at least 3 fields.")
+
+        placement, active_color, castling = parts[0], parts[1], parts[2]
+        board = cls._parse_fen_placement(placement)
+
+        if active_color not in ('w', 'b'):
+            raise ValueError("Active color must be 'w' or 'b'.")
+
+        castling_rights = cls._parse_fen_castling(castling)
+
+        white_king = sum(1 for row in board for p in row if p == 'K')
+        black_king = sum(1 for row in board for p in row if p == 'k')
+        if white_king != 1 or black_king != 1:
+            raise ValueError(
+                "FEN must include exactly one white and one black king.")
+
+        game = cls(time_limit=time_limit, increment=increment)
+        game.board = board
+        game.current_turn = 'white' if active_color == 'w' else 'black'
+        game.castling_rights = castling_rights
+
+        # Parse en passant target (field 4)
+        if len(parts) >= 4 and parts[3] != '-':
+            ep_str = parts[3]
+            if len(ep_str) == 2 and ep_str[0] in 'abcdefgh' and ep_str[1] in '12345678':
+                col = ord(ep_str[0]) - ord('a')
+                row = 8 - int(ep_str[1])
+                game.en_passant_target = (row, col)
+            else:
+                game.en_passant_target = None
+        else:
+            game.en_passant_target = None
+
+        # Parse halfmove clock (field 5)
+        if len(parts) >= 5:
+            try:
+                game.halfmove_clock = max(0, int(parts[4]))
+            except ValueError:
+                game.halfmove_clock = 0
+        else:
+            game.halfmove_clock = 0
+
+        # Parse fullmove clock (field 6)
+        if len(parts) >= 6:
+            try:
+                game.initial_fullmove = max(1, int(parts[5]))
+            except ValueError:
+                game.initial_fullmove = 1
+        else:
+            game.initial_fullmove = 1
+
+        game.initial_turn_was_black = (active_color == 'b')
+
+        game.move_history = []
+        game.captured = {'white': [], 'black': []}
+        game.valid_moves_cache = {}
+        game.repetition_history = [game.generate_position_key()]
+        game._rebuild_repetition_counts()
+        game.game_status = 'active'
+        game.draw_reason = None
+        game.threefold_warning = False
+        game.last_ts = time.time()
+        return game
+
+    @staticmethod
+    def _parse_fen_placement(placement: str):
+        rows = placement.split('/')
+        if len(rows) != 8:
+            raise ValueError("FEN must have 8 ranks.")
+
+        valid_pieces = set('prnbqkPRNBQK')
+        board = []
+
+        for row in rows:
+            row_cells = []
+            for ch in row:
+                if ch.isdigit():
+                    count = int(ch)
+                    if count < 1 or count > 8:
+                        raise ValueError(
+                            "Invalid empty-square count in FEN.")
+                    row_cells.extend([None] * count)
+                else:
+                    if ch not in valid_pieces:
+                        raise ValueError(
+                            "Invalid piece character in FEN.")
+                    row_cells.append(ch)
+
+            if len(row_cells) != 8:
+                raise ValueError("Each FEN rank must have 8 files.")
+            board.append(row_cells)
+
+        return board
+
+    @staticmethod
+    def _parse_fen_castling(castling: str):
+        rights = {'w_k': False, 'w_q': False, 'b_k': False, 'b_q': False}
+
+        if castling == '-':
+            return rights
+
+        valid_chars = set('KQkq')
+        for ch in castling:
+            if ch not in valid_chars:
+                raise ValueError("Invalid castling rights in FEN.")
+            if ch == 'K':
+                rights['w_k'] = True
+            elif ch == 'Q':
+                rights['w_q'] = True
+            elif ch == 'k':
+                rights['b_k'] = True
+            elif ch == 'q':
+                rights['b_q'] = True
+
+        return rights
 
     # ------------------------------------------------------------------
     #  C++ engine communication
@@ -270,7 +431,8 @@ DP cache is intentionally excluded to save cookie space."""
             return False
 
         target_row, target_col = self.en_passant_target
-        pawn_row = target_row + 1 if self.current_turn == 'white' else target_row - 1
+        is_w = self.current_turn == 'white'
+        pawn_row = target_row + 1 if is_w else target_row - 1
         pawn_piece = 'P' if self.current_turn == 'white' else 'p'
 
         if not (0 <= pawn_row < 8):
@@ -278,7 +440,8 @@ DP cache is intentionally excluded to save cookie space."""
 
         for delta_col in (-1, 1):
             pawn_col = target_col + delta_col
-            if 0 <= pawn_col < 8 and self.board[pawn_row][pawn_col] == pawn_piece:
+            if (0 <= pawn_col < 8
+                    and self.board[pawn_row][pawn_col] == pawn_piece):
                 return True
 
         return False
@@ -344,7 +507,9 @@ DP cache is intentionally excluded to save cookie space."""
 
         # Detect En Passant capture before moving piece
         if piece.lower() == 'p' and fc != tc and not captured:
-            if self.en_passant_target and tr == self.en_passant_target[0] and tc == self.en_passant_target[1]:
+            if (self.en_passant_target
+                    and tr == self.en_passant_target[0]
+                    and tc == self.en_passant_target[1]):
                 # The captured piece is of opposite color
                 captured = 'p' if piece.isupper() else 'P'
                 # In EP, the captured pawn is at (fr, tc)
@@ -418,15 +583,26 @@ DP cache is intentionally excluded to save cookie space."""
             self.halfmove_clock += 1
 
         notation = self._notation(
-            fr, fc, tr, tc, piece, captured, board_before, rights_before, ep_before)
-        if promoted and '=' not in notation:
-            notation += '=' + (self.board[tr][tc] or 'Q').upper()
+            fr, fc, tr, tc, piece, captured,
+            board_before, rights_before, ep_before,
+            promo_char=(promotion_piece or 'q') if promoted else None)
 
         # Invalidate DP cache because board state has changed
         self.valid_moves_cache = {}
 
+        # Save who made this move before switching
+        moved_by = self.current_turn
+
+        # Apply increment to the player who just made the move
+        is_white = self.current_turn == 'white'
+        if self.increment > 0:
+            if is_white:
+                self.white_time += self.increment
+            else:
+                self.black_time += self.increment
+
         # Switch turn
-        self.current_turn = 'black' if self.current_turn == 'white' else 'white'
+        self.current_turn = 'black' if is_white else 'white'
 
         self.last_ts = time.time()
 
@@ -442,17 +618,19 @@ DP cache is intentionally excluded to save cookie space."""
         # Check for checkmate / stalemate / check
         game_status = self.check_game_status()
         if game_status == 'checkmate':
-            notation += '#'
+            if not notation.endswith('#'):
+                notation += '#'
 
         elif game_status == 'check':
-            notation += '+'
+            if not notation.endswith('+') and not notation.endswith('#'):
+                notation += '+'
         self.move_history.append({
             'notation': notation,
             'piece': piece,
             'from': [fr, fc],
             'to': [tr, tc],
             'captured': captured,
-            'color': self.current_turn,
+            'color': moved_by,
             'promoted_to': self.board[tr][tc] if promoted else None,
         })
 
@@ -472,6 +650,10 @@ DP cache is intentionally excluded to save cookie space."""
 
         repetition_count = self.repetition_counts.get(
             self.generate_position_key(), 1)
+        
+        # Warning on second occurrence
+        self.threefold_warning = (repetition_count == 2)
+
         if repetition_count >= 3:
             self.game_status = 'draw'
             self.draw_reason = 'threefold_repetition'
@@ -484,10 +666,14 @@ DP cache is intentionally excluded to save cookie space."""
 
         self.game_status = 'active'
         self.draw_reason = None
+        
+        if repetition_count != 2:
+            self.threefold_warning = False
+    
         return True, notation, captured, game_status
 
     def get_valid_moves(self, row, col):
-        """Return legal moves from DP cache (fetches from engine if missing)."""
+        """Return legal moves from DP cache."""
         piece = self.board[row][col]
         if not piece or self._color(piece) != self.current_turn:
             return []
@@ -504,13 +690,17 @@ DP cache is intentionally excluded to save cookie space."""
         board_str = self.serialize_board()
         rights_str = self.serialize_castling_rights()
         ep_str = self._serialize_ep()
-        cmd = f"MOVES {board_str} {rights_str} {self.current_turn} {ep_str} {row} {col}"
+        cmd = (
+            f"MOVES {board_str} {rights_str}"
+            f" {self.current_turn} {ep_str} {row} {col}"
+        )
         resp = self._call_engine(cmd)
 
         moves = []
         if resp and resp.startswith("MOVES"):
             parts = resp.split()[1:]
-            # C++ now returns 4 fields per move: row col is_capture is_promotion
+            # C++ returns 4 fields per move:
+            # row col is_capture is_promotion
             for i in range(0, len(parts), 4):
                 moves.append({
                     'row': int(parts[i]),
@@ -532,7 +722,11 @@ DP cache is intentionally excluded to save cookie space."""
         board_str = self.serialize_board()
         rights_str = self.serialize_castling_rights()
         ep_str = self._serialize_ep()
-        cmd = f"PROMOTE {board_str} {rights_str} {self.current_turn} {ep_str} {fr} {fc} {tr} {tc} {choice}"
+        cmd = (
+            f"PROMOTE {board_str} {rights_str}"
+            f" {self.current_turn} {ep_str}"
+            f" {fr} {fc} {tr} {tc} {choice}"
+        )
         resp = self._call_engine(cmd)
         if resp and resp.startswith("PROMOTE"):
             return resp.split()[1]
@@ -578,13 +772,26 @@ DP cache is intentionally excluded to save cookie space."""
             return False
         return (piece == 'P' and tr == 0) or (piece == 'p' and tr == 7)
 
-    def _notation(self, fr, fc, tr, tc, piece, captured, board_str=None, rights_str=None, ep_str=None):
+    def _notation(self, fr, fc, tr, tc, piece, captured,
+                  board_str=None, rights_str=None,
+                  ep_str=None, promo_char=None):
         """
         Generate SAN notation via C++ engine if possible,
           else simplified fallback."""
+        if promo_char:
+            promo_char = promo_char.lower()
+            if promo_char not in ('q', 'r', 'b', 'n'):
+                promo_char = 'q'
+
         if board_str and rights_str:
             ep_str = ep_str or self._serialize_ep()
-            cmd = f"NOTATION {board_str} {rights_str} {self.current_turn} {ep_str} {fr} {fc} {tr} {tc}"
+            cmd = (
+                f"NOTATION {board_str} {rights_str}"
+                f" {self.current_turn} {ep_str}"
+                f" {fr} {fc} {tr} {tc}"
+            )
+            if promo_char:
+                cmd += f" {promo_char}"
             resp = self._call_engine(cmd)
             if resp and resp.startswith("NOTATION"):
                 parts = resp.split()
@@ -628,6 +835,8 @@ DP cache is intentionally excluded to save cookie space."""
                         notation = f"{p_char}x{t_coord}"
                     else:
                         notation = f"{p_char}{t_coord}"
+        if promo_char and '=' not in notation:
+            notation += '=' + promo_char.upper()
         return notation
 
     @staticmethod
@@ -680,11 +889,13 @@ DP cache is intentionally excluded to save cookie space."""
     def _load_opening_book(cls) -> dict:
         """Load the opening book JSON from disk (cached after first load)."""
         if cls._opening_book is None:
-            try:
-                with open(cls.OPENING_BOOK_PATH, encoding='utf-8') as fh:
-                    cls._opening_book = json.load(fh)
-            except (OSError, json.JSONDecodeError):
-                cls._opening_book = {}  # Graceful fallback: no book
+            with cls._opening_book_lock:
+                if cls._opening_book is None:
+                    try:
+                        with open(cls.OPENING_BOOK_PATH, encoding='utf-8') as fh:
+                            cls._opening_book = json.load(fh)
+                    except (OSError, json.JSONDecodeError):
+                        cls._opening_book = {}  # Graceful fallback: no book
         return cls._opening_book
 
     def generate_fen_key(self) -> str:
@@ -714,9 +925,32 @@ DP cache is intentionally excluded to save cookie space."""
         side = 'w' if self.current_turn == 'white' else 'b'
 
         # Castling rights
-        castling = self.serialize_castling_rights()  # already returns '-' if none
+        # Already returns '-' if none
+        castling = self.serialize_castling_rights()
 
         return f"{placement} {side} {castling}"
+
+    def generate_full_fen(self) -> str:
+        """Build a complete 6-field FEN string."""
+        base_fen = self.generate_fen_key()
+
+        # En Passant target
+        ep_str = '-'
+        if self.en_passant_target:
+            row, col = self.en_passant_target
+            file_char = chr(ord('a') + col)
+            rank_char = str(8 - row)
+            ep_str = f"{file_char}{rank_char}"
+
+        # Halfmove clock
+        halfmove = str(self.halfmove_clock)
+
+        # Fullmove clock
+        offset = 1 if getattr(self, 'initial_turn_was_black', False) else 0
+        fullmove_count = getattr(self, 'initial_fullmove', 1)
+        fullmove = str(fullmove_count + ((len(self.move_history) + offset) // 2))
+
+        return f"{base_fen} {ep_str} {halfmove} {fullmove}"
 
     def get_opening_book_move(self) -> dict | None:
         """Return a random book move for the current position, or ``None``.
@@ -784,7 +1018,10 @@ DP cache is intentionally excluded to save cookie space."""
         if depth is None:
             depth = self._get_ai_search_depth()
         ep_str = self._serialize_ep()
-        cmd = f"BESTMOVE {board_str} {rights_str} {self.current_turn} {ep_str} {depth}"
+        cmd = (
+            f"BESTMOVE {board_str} {rights_str}"
+            f" {self.current_turn} {ep_str} {depth}"
+        )
         resp = self._call_engine(cmd)
 
         if not resp or not resp.startswith("BESTMOVE"):
