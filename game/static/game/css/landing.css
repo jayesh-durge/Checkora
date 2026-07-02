@@ -1006,18 +1006,7 @@ body.hide-native-cursor * {
     color: var(--accent-gold);
 }
 
-/* Track */
-.about-track-wrapper {
-    width: 100%;
-    overflow: hidden;
-}
-
-.about-track {
-    display: flex;
-    width: 400%; /* 4 cards */
-    will-change: transform;
-    transition: transform 0.5s ease-in-out;
-}
+/* Track (defined above at .about-track-wrapper and .about-track — no duplicate needed) */
 
 /* Individual Card */
 

@@ -1617,88 +1617,159 @@
     setupCounterAnimation('.platform-stats-section', '.stat-num');
     setupCounterAnimation('.about-pin-section', '.about-stat-num');
 
-    // ── Automatic Carousel ──
-    const track       = document.getElementById('aboutTrack');
-    const progressFill = document.getElementById('aboutProgressFill');
-    const currentCardEl = document.getElementById('aboutCurrentCard');
-    const dots        = document.querySelectorAll('.about-dot');
-    const CARD_COUNT  = 4;
-    let currentCardIndex = 0;
-    let carouselInterval;
-    let isPausedManually = false;
+    // ── Automatic Carousel (robust fix) ──
+    (function () {
+        const track          = document.getElementById('aboutTrack');
+        const progressFill   = document.getElementById('aboutProgressFill');
+        const currentCardEl  = document.getElementById('aboutCurrentCard');
+        const dots           = document.querySelectorAll('.about-dot');
+        const pausePlayBtn   = document.getElementById('aboutPausePlayBtn');
+        const iconPause      = document.getElementById('icon-pause');
+        const iconPlay       = document.getElementById('icon-play');
+        const aboutBox       = document.querySelector('.about-box');
+        const aboutSection   = document.getElementById('about');
 
-    const pausePlayBtn = document.getElementById('aboutPausePlayBtn');
-    const iconPause = document.getElementById('icon-pause');
-    const iconPlay = document.getElementById('icon-play');
+        const CARD_COUNT     = dots.length || 4;  // derive from actual DOM
+        const INTERVAL_MS    = 5000;
 
-    function goToCard(index) {
-        currentCardIndex = index;
-        if (track) track.style.transform = `translateX(-${currentCardIndex * 25}%)`;
-        const progress = (currentCardIndex / (CARD_COUNT - 1)) * 100;
-        if (progressFill) progressFill.style.width = `${progress}%`;
-        if (currentCardEl) currentCardEl.textContent = currentCardIndex + 1;
-        dots.forEach((dot, i) => {
-            dot.classList.toggle('active', i === currentCardIndex);
-            dot.setAttribute('aria-pressed', i === currentCardIndex ? 'true' : 'false');
-        });
-    }
+        // Guard: do nothing if the track element is missing or there’s only one slide.
+        if (!track || CARD_COUNT <= 1) return;
 
-    function nextCard() {
-        let nextIndex = (currentCardIndex + 1) % CARD_COUNT;
-        goToCard(nextIndex);
-    }
+        let currentCardIndex = 0;
+        let carouselTimer    = null;   // holds the setInterval ID
+        let isPausedManually = false;  // true when user clicked Pause button
+        let isHovered        = false;  // true while mouse is inside .about-box
+        let isVisible        = false;  // true while section is in the viewport
 
-    function startCarousel() {
-        if (!carouselInterval && !isPausedManually) {
-            carouselInterval = setInterval(nextCard, 5000);
+        // ── Core slide navigation ───────────────────────────────────────
+        function goToCard(index) {
+            // Clamp to valid range
+            currentCardIndex = Math.max(0, Math.min(index, CARD_COUNT - 1));
+
+            track.style.transform = `translateX(-${currentCardIndex * (100 / CARD_COUNT)}%)`;
+
+            const progress = CARD_COUNT > 1
+                ? (currentCardIndex / (CARD_COUNT - 1)) * 100
+                : 100;
+            if (progressFill) progressFill.style.width = `${progress}%`;
+            if (currentCardEl) currentCardEl.textContent = currentCardIndex + 1;
+
+            dots.forEach((dot, i) => {
+                const active = (i === currentCardIndex);
+                dot.classList.toggle('active', active);
+                dot.setAttribute('aria-pressed', active ? 'true' : 'false');
+            });
         }
-    }
 
-    function stopCarousel() {
-        if (carouselInterval) {
-            clearInterval(carouselInterval);
-            carouselInterval = null;
+        function nextCard() {
+            goToCard((currentCardIndex + 1) % CARD_COUNT);
         }
-    }
 
-    dots.forEach((dot, i) => {
-        dot.addEventListener('click', () => {
-            goToCard(i);
-            stopCarousel();
-            startCarousel();
-        });
-    });
-
-    if (pausePlayBtn) {
-        pausePlayBtn.addEventListener('click', () => {
-            if (isPausedManually) {
-                isPausedManually = false;
-                if (iconPlay) iconPlay.style.display = 'none';
-                if (iconPause) iconPause.style.display = 'block';
-                startCarousel();
-            } else {
-                isPausedManually = true;
-                stopCarousel();
-                if (iconPause) iconPause.style.display = 'none';
-                if (iconPlay) iconPlay.style.display = 'block';
+        // ── Timer management ───────────────────────────────────────────
+        // stopTimer / startTimer are the single source-of-truth for the
+        // interval.  Nothing outside this pair should touch carouselTimer.
+        function stopTimer() {
+            if (carouselTimer !== null) {
+                clearInterval(carouselTimer);
+                carouselTimer = null;
             }
+        }
+
+        // Start the timer only when ALL conditions are met:
+        //   • section is scrolled into view   (isVisible)
+        //   • user has NOT manually paused    (!isPausedManually)
+        //   • mouse is NOT hovering           (!isHovered)
+        //   • no timer is already running     (carouselTimer === null)
+        function tryStartTimer() {
+            if (isVisible && !isPausedManually && !isHovered && carouselTimer === null) {
+                carouselTimer = setInterval(nextCard, INTERVAL_MS);
+            }
+        }
+
+        // ── Dot / manual navigation ─────────────────────────────────────
+        dots.forEach((dot, i) => {
+            dot.addEventListener('click', () => {
+                goToCard(i);
+                // Reset the interval so the next auto-advance starts fresh
+                // from the manually-selected slide.
+                stopTimer();
+                tryStartTimer();
+            });
         });
-    }
 
-    if (track) {
-        goToCard(0);
-        startCarousel();
+        // ── Pause / Play button ─────────────────────────────────────────
+        if (pausePlayBtn) {
+            pausePlayBtn.addEventListener('click', () => {
+                if (isPausedManually) {
+                    // Resume
+                    isPausedManually = false;
+                    if (iconPlay)  iconPlay.style.display  = 'none';
+                    if (iconPause) iconPause.style.display = 'block';
+                    pausePlayBtn.setAttribute('aria-label', 'Pause Auto-Slide');
+                    tryStartTimer();
+                } else {
+                    // Pause
+                    isPausedManually = true;
+                    stopTimer();
+                    if (iconPause) iconPause.style.display = 'none';
+                    if (iconPlay)  iconPlay.style.display  = 'block';
+                    pausePlayBtn.setAttribute('aria-label', 'Play Auto-Slide');
+                }
+            });
+        }
 
-        const aboutBox = document.querySelector('.about-box');
+        // ── Hover pause ─────────────────────────────────────────────────
+        // Pause while the user hovers so they can read without the slide
+        // changing under them.  Resume as soon as the mouse leaves.
         if (aboutBox) {
             aboutBox.addEventListener('mouseenter', () => {
-                if (!isPausedManually) stopCarousel();
+                isHovered = true;
+                stopTimer();
             });
             aboutBox.addEventListener('mouseleave', () => {
-                if (!isPausedManually) startCarousel();
+                isHovered = false;
+                tryStartTimer();   // restart only if all other conditions are met
             });
         }
-    }
+
+        // ── Visibility (IntersectionObserver) ──────────────────────────
+        // Only run the carousel while the section is on screen.
+        // This also serves as the initial trigger — the carousel won’t
+        // start until the user actually scrolls to the About section.
+        if ('IntersectionObserver' in window && aboutSection) {
+            const sectionObserver = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        isVisible = true;
+                        tryStartTimer();
+                    } else {
+                        isVisible = false;
+                        stopTimer();   // save resources when off-screen
+                    }
+                });
+            }, { threshold: 0.15 });
+            sectionObserver.observe(aboutSection);
+        } else {
+            // Fallback: always treat as visible
+            isVisible = true;
+            tryStartTimer();
+        }
+
+        // ── Page Visibility API ─────────────────────────────────────────
+        // Pause when the tab is hidden; resume when it becomes active.
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                stopTimer();
+            } else {
+                tryStartTimer();
+            }
+        });
+
+        // ── Init ────────────────────────────────────────────────────────
+        goToCard(0);
+        // Timer will auto-start once the IntersectionObserver fires.
+    }());
+
 
     // ── Smooth Scrolling for Anchor Links ──
     document.querySelectorAll('a[href^="#"]').forEach(anchor => {
