@@ -98,13 +98,14 @@ from game.services import (
     create_or_update_active_game,
     delete_active_game,
     get_opening_reply,
+    get_valid_openings,
 )
 
 from django.http import FileResponse
 
 from .analysis import detect_opening
 from .analysis import build_summary
-VALID_OPENINGS = {'italian_game', 'sicilian_defense', 'queens_gambit'}
+VALID_OPENINGS = get_valid_openings()
 
 def landing(request):
     """Render the landing page introduction to Checkora."""
@@ -605,7 +606,11 @@ def ai_move(request):
     if opening:
         try:
             ai_half_moves = len(game.move_history)
-            book_move = get_opening_reply(opening, ai_half_moves)
+            played = [
+                (m['from_row'], m['from_col'], m['to_row'], m['to_col'])
+                for m in game.move_history
+            ]
+            book_move = get_opening_reply(opening, ai_half_moves, played)
         except Exception:
             book_move = None
 
@@ -622,6 +627,8 @@ def ai_move(request):
             request.session.modified = True
             best = game.get_ai_move(depth=depth)
     else:
+        request.session['opening'] = ''
+        request.session.modified = True
         best = game.get_ai_move(depth=depth)
 
     if not best:

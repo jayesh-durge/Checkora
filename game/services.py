@@ -513,13 +513,20 @@ def get_opening_line(name):
     return opening.get('moves', [])[:]  # [:] copies so callers can't mutate the cache
 
 
-def get_opening_reply(name, move_index):
+def get_opening_reply(name, move_index, played_moves):
     """
-    return the theory reply at move_index.
-    move_index is the index of the AI's next move in the sequence.
-    returns None if out of book.
+    played_moves: list of (from_row, from_col, to_row, to_col) tuples
+    actually played so far in the game.
+    Returns None if the game has diverged from the book line.
     """
     moves = get_opening_line(name)
-    if 0 <= move_index < len(moves):  # guard against negative indices wrapping
-        return moves[move_index]
-    return None
+    if move_index >= len(moves):
+        return None
+    # verify every move played so far matches the book line
+    if played_moves != moves[:move_index]:
+        return None
+    return moves[move_index]
+
+def get_valid_openings():
+    """return the set of opening names available in the book"""
+    return set(_load_named_lines().keys())
