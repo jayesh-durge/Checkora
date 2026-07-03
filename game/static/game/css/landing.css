@@ -1767,7 +1767,7 @@ body.hide-native-cursor * {
 @media (max-width: 480px) {
     .about-box {
         width: 95%;
-        height: 550px;
+        height: 500px;
     }
 
     .about-card {
@@ -2880,22 +2880,6 @@ body.hide-native-cursor * {
         gap: 0.75rem;
     }
 
-    .bento-card {
-        padding: 0.85rem;
-        border-radius: 12px;
-    }
-
-    .bento-visual {
-        margin-bottom: 0.5rem;
-        border-radius: 8px;
-        min-height: 120px;
-    }
-
-    .bento-icon-small {
-        width: 24px;
-        height: 24px;
-    }
-
     .bento-title {
         font-size: 1rem;
     }
@@ -2913,33 +2897,6 @@ body.hide-native-cursor * {
     .chess-visual-wrap { transform: scale(0.75); transform-origin: center; }
     .mode-switch-container { transform: scale(0.75); transform-origin: center; }
     .score-visual { padding: 0 0.5rem; }
-
-    /* Reset span helpers */
-    .bento-full,
-    .bento-wide {
-        grid-column: span 1;
-    }
-    .bento-tall {
-        grid-row: span 1;
-    }
-    .bento-card.bento-full {
-        grid-row: span 1;
-        height: auto;
-    }
-
-    /* Ensure inner elements/mockups/images use max-width 100% with border-box */
-    .bento-card img,
-    .bento-card svg,
-    .bento-card .bento-visual,
-    .bento-card .lesson-mockup,
-    .bento-card .perf-meter,
-    .bento-card .ai-brain-container,
-    .bento-card .modes-visual,
-    .bento-card .valid-visual,
-    .bento-card .chess-grid-mini {
-        max-width: 100%;
-        box-sizing: border-box;
-    }
 }
 
 /* ==========================================================================
