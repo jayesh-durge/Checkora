@@ -2273,7 +2273,7 @@ def confirm_delete_account(request, uidb64, token):
 
 
 def _classify_move(is_best, played_mv, best_mv, game_state):
-    """Classifies a move using a basic material heuristic."""
+    """Classifies a move by simulating it and comparing material difference."""
     if is_best:
         return 'Best'
         
@@ -2282,17 +2282,45 @@ def _classify_move(is_best, played_mv, best_mv, game_state):
         
     piece_vals = {'p': 1, 'n': 3, 'b': 3, 'r': 5, 'q': 9, 'k': 0}
     
-    def _capture_value(move):
-        target = game_state.board[move[0]][move[1]]
-        return piece_vals.get(target.lower(), 0) if target else 0
+    def _simulate_and_evaluate(mv):
+        # Calculate material score for the player who just moved
+        board_copy = [row[:] for row in game_state.board]
+        
+        # Apply the move
+        f_r, f_c = mv.get('from_row'), mv.get('from_col')
+        t_r, t_c = mv.get('to_row'), mv.get('to_col')
+        
+        if f_r is not None and f_c is not None:
+            piece = board_copy[f_r][f_c]
+            board_copy[t_r][t_c] = piece
+            board_copy[f_r][f_c] = ''
+        
+        # Simple material evaluation
+        score = 0
+        is_white = game_state.current_turn == 'white'
+        
+        for r in range(8):
+            for c in range(8):
+                p = board_copy[r][c]
+                if p:
+                    val = piece_vals.get(p.lower(), 0)
+                    if (p.isupper() and is_white) or (p.islower() and not is_white):
+                        score += val
+                    else:
+                        score -= val
+                        
+        return score
 
-    played_val = _capture_value((played_mv['to_row'], played_mv['to_col']))
-    best_val = _capture_value((best_mv['to_row'], best_mv['to_col']))
+    played_eval = _simulate_and_evaluate(played_mv)
+    best_eval = _simulate_and_evaluate(best_mv)
     
-    if best_val >= played_val + 3 or (best_val >= 5 and played_val == 0):
+    diff = best_eval - played_eval
+    
+    if diff >= 3:
         return 'Blunder'
-    elif best_val > played_val:
+    elif diff >= 1:
         return 'Mistake'
+    return 'Inaccuracy'
     return 'Inaccuracy'
 
 @require_POST
@@ -2386,7 +2414,10 @@ def analyze_game_view(request):
                 promotions += 1
 
             is_best = False
-            played_dict = {'to_row': actual_to[0], 'to_col': actual_to[1]}
+            played_dict = {
+                'from_row': actual_from[0], 'from_col': actual_from[1],
+                'to_row': actual_to[0], 'to_col': actual_to[1]
+            }
             if best_move:
                 is_best = (best_move['from_row'] == actual_from[0] and best_move['from_col'] == actual_from[1] and best_move['to_row'] == actual_to[0] and best_move['to_col'] == actual_to[1])
             else:
